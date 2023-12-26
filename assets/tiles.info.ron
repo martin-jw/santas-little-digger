@@ -1,0 +1,15 @@
+(
+    tiles: {
+        "ground": (
+            index: 0,
+            tile_type: Walkable
+        ),
+        "ice": (
+            index: 1,
+            tile_type: Diggable(
+                level: 1,
+                hardness: 1.0            
+            )
+        )
+    }
+)
