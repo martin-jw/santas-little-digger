@@ -1,4 +1,4 @@
-use crate::map::{MapSettings, TileDigging, TileType};
+use crate::map::{MapSettings, TileDigging, TileTerrain};
 use crate::prelude::*;
 
 pub struct PlayerPlugin;
@@ -52,7 +52,7 @@ fn move_player(
     mut commands: Commands,
     player_query: Query<(Entity, &GridPosition), Without<MoveTo>>,
     map_query: Query<(&TilemapSize, &TileStorage)>,
-    tile_query: Query<&TileType>,
+    tile_query: Query<&TileTerrain>,
     input: Res<Input<KeyCode>>,
 ) {
     let (map_size, tiles) = map_query.single();
@@ -83,13 +83,13 @@ fn move_player(
                     .get(tile_entity)
                     .expect("Tile should have a tile type")
                 {
-                    TileType::Walkable => 0.5,
-                    TileType::Diggable { hardness, .. } => {
+                    TileTerrain::Walkable => 0.5,
+                    TileTerrain::Diggable { hardness, .. } => {
                         let time = 0.5 * (1.0 + hardness);
                         commands.entity(tile_entity).insert(TileDigging::new(time));
                         time
                     }
-                    TileType::Impassable => return,
+                    TileTerrain::Impassable => return,
                 };
 
                 commands.entity(e).insert(MoveTo::new(new_pos, move_speed));

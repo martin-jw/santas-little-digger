@@ -104,16 +104,22 @@ fn camera_follow_player(
 }
 
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+    let mut app = App::new();
+
+    app.add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(player::PlayerPlugin)
         .add_plugins(PixelCameraPlugin)
         .add_plugins(map::MapPlugin)
-        .add_plugins(WorldInspectorPlugin::new())
         .add_state::<MainStates>()
         .insert_resource(Msaa::Off)
+        .insert_resource(ClearColor(Color::rgb_u8(27, 38, 50)))
         .add_systems(Startup, setup_camera)
         .add_systems(Update, camera_follow_player)
-        .add_systems(FixedUpdate, animate_moveto)
-        .run();
+        .add_systems(FixedUpdate, animate_moveto);
+
+    if cfg!(debug_assertions) {
+        app.add_plugins(WorldInspectorPlugin::new());
+    }
+
+    app.run();
 }
