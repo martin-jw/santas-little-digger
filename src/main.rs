@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use bevy::asset::LoadState;
 use bevy::ecs::query::QuerySingleError;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_pixel_camera::{PixelCameraPlugin, PixelViewport, PixelZoom};
@@ -11,6 +12,7 @@ mod prelude {
     pub use bevy_ecs_tilemap::prelude::*;
 
     pub use super::GridPosition;
+    pub use super::LoadingAssets;
     pub use super::MainStates;
     pub use super::MoveTo;
 }
@@ -68,6 +70,11 @@ fn animate_moveto(
     }
 }
 
+#[derive(Resource)]
+pub struct LoadingAssets {
+    pub assets: Vec<UntypedHandle>,
+}
+
 #[derive(Component)]
 struct MainCamera;
 
@@ -81,6 +88,38 @@ fn setup_camera(mut commands: Commands) {
         PixelZoom::Fixed(4),
         PixelViewport,
     ));
+}
+
+fn get_group_load_state(
+    asset_server: Res<AssetServer>,
+    handles: impl IntoIterator<Item = UntypedHandle>,
+) -> LoadState {
+    let mut load_state = LoadState::Loaded;
+
+    for handle in handles {
+        match asset_server.get_load_state(handle.id()) {
+            Some(state) => match state {
+                LoadState::Loaded => continue,
+                LoadState::Loading => load_state = LoadState::Loading,
+                LoadState::Failed => return LoadState::Failed,
+                LoadState::NotLoaded => return LoadState::NotLoaded,
+            },
+            None => return LoadState::NotLoaded,
+        }
+    }
+
+    load_state
+}
+
+fn detect_assets_loaded(
+    loading_assets: Res<LoadingAssets>,
+    asset_server: Res<AssetServer>,
+    mut next_state: ResMut<NextState<MainStates>>,
+) {
+    match get_group_load_state(asset_server, loading_assets.assets.clone()) {
+        LoadState::Loaded => next_state.set(MainStates::InGame),
+        _ => (),
+    }
 }
 
 fn camera_follow_player(
@@ -111,10 +150,15 @@ fn main() {
         .add_plugins(PixelCameraPlugin)
         .add_plugins(map::MapPlugin)
         .add_state::<MainStates>()
+        .insert_resource(LoadingAssets { assets: Vec::new() })
         .insert_resource(Msaa::Off)
         .insert_resource(ClearColor(Color::rgb_u8(27, 38, 50)))
         .add_systems(Startup, setup_camera)
         .add_systems(Update, camera_follow_player)
+        .add_systems(
+            Update,
+            detect_assets_loaded.run_if(in_state(MainStates::Loading)),
+        )
         .add_systems(FixedUpdate, animate_moveto);
 
     if cfg!(debug_assertions) {

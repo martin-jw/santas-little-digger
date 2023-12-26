@@ -1,4 +1,3 @@
-use bevy::asset::LoadState;
 use bevy_common_assets::ron::RonAssetPlugin;
 use bevy_ecs_tilemap::helpers::square_grid::neighbors::{Neighbors, SquareDirection};
 use bevy_ecs_tilemap::prelude::*;
@@ -127,14 +126,6 @@ impl TileInfo {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash, States, Default)]
-enum MapStates {
-    #[default]
-    LoadingAssets,
-    Ready,
-    Generated,
-}
-
 #[derive(Debug, Clone, Default, Resource)]
 pub struct MapSettings {
     pub size: (u32, u32),
@@ -232,57 +223,24 @@ fn update_tile_digging(
     }
 }
 
-fn load_map_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.insert_resource(MapAssets {
-        texture: asset_server.load("tilemap.png"),
-        tile_info: asset_server.load("tiles.info.ron"),
-    });
-}
-
-fn get_group_load_state(
-    asset_server: Res<AssetServer>,
-    handles: impl IntoIterator<Item = UntypedHandle>,
-) -> LoadState {
-    let mut load_state = LoadState::Loaded;
-
-    for handle in handles {
-        match asset_server.get_load_state(handle.id()) {
-            Some(state) => match state {
-                LoadState::Loaded => continue,
-                LoadState::Loading => load_state = LoadState::Loading,
-                LoadState::Failed => return LoadState::Failed,
-                LoadState::NotLoaded => return LoadState::NotLoaded,
-            },
-            None => return LoadState::NotLoaded,
-        }
-    }
-
-    load_state
-}
-
-fn check_map_asset_loading(
+fn load_map_assets(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut next_state: ResMut<NextState<MapStates>>,
-    map_assets: Res<MapAssets>,
-    tile_info_assets: Res<Assets<TileInfo>>,
+    mut loading_assets: ResMut<LoadingAssets>,
 ) {
-    let assets = vec![
-        map_assets.texture.clone().untyped(),
-        map_assets.tile_info.clone().untyped(),
-    ];
+    let map_assets = MapAssets {
+        texture: asset_server.load("tilemap.png"),
+        tile_info: asset_server.load("tiles.info.ron"),
+    };
 
-    match get_group_load_state(asset_server, assets) {
-        LoadState::Loaded => {
-            next_state.set(MapStates::Ready);
-            let tile_info = tile_info_assets
-                .get(map_assets.tile_info.clone())
-                .expect("TileInfo should be loaded!");
+    loading_assets
+        .assets
+        .push(map_assets.texture.clone().untyped());
+    loading_assets
+        .assets
+        .push(map_assets.tile_info.clone().untyped());
 
-            commands.insert_resource(tile_info.clone());
-        }
-        _ => {}
-    }
+    commands.insert_resource(map_assets);
 }
 
 fn update_visibility(
@@ -311,11 +269,8 @@ fn create_map(
     settings: Res<MapSettings>,
     map_assets: Res<MapAssets>,
     tile_info: Res<TileInfo>,
-    mut next_map_state: ResMut<NextState<MapStates>>,
-    mut next_main_state: ResMut<NextState<MainStates>>,
 ) {
     println!("Creating map");
-
     println!("{:?}", tile_info);
 
     let map_size = TilemapSize {
@@ -364,26 +319,28 @@ fn create_map(
         transform: Transform::from_xyz(0.0, 0.0, -1.0),
         ..default()
     });
+}
 
-    next_map_state.set(MapStates::Generated);
-    next_main_state.set(MainStates::InGame);
+fn insert_tile_info(
+    mut commands: Commands,
+    map_assets: Res<MapAssets>,
+    tile_info_assets: Res<Assets<TileInfo>>,
+) {
+    let tile_info = tile_info_assets.get(map_assets.tile_info.clone()).unwrap();
+    commands.insert_resource(tile_info.clone());
 }
 
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(TilemapPlugin)
-            .add_state::<MapStates>()
             .add_plugins(RonAssetPlugin::<TileInfo>::new(&["info.ron"]))
             .add_systems(Startup, load_map_assets)
             .add_systems(
                 Update,
-                check_map_asset_loading.run_if(in_state(MapStates::LoadingAssets)),
-            )
-            .add_systems(
-                Update,
                 update_tile_digging.run_if(in_state(MainStates::InGame)),
             )
-            .add_systems(OnEnter(MapStates::Ready), create_map)
+            .add_systems(OnExit(MainStates::Loading), insert_tile_info)
+            .add_systems(OnEnter(MainStates::InGame), create_map)
             .add_systems(
                 PostUpdate,
                 (update_visibility, update_directional_tiles).run_if(in_state(MainStates::InGame)),
